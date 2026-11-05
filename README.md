@@ -1,19 +1,19 @@
 # bybit-c
 
-Клиент Bybit API V5 на C11. Это библиотека на C, без C++.
+A Bybit API V5 client written in C11. This is a C library, without C++.
 
-Покрыты REST-эндпоинты из официальной документации V5 (коммит `d5a43d2` репозитория `bybit-exchange/docs`): 448 методов, из них 56 публичных и 392 с подписью. WebSocket говорит на JSON-каналах V5 и умеет принять бинарные кадры SBE. Схема SBE не декодируется: разбирается только 8-байтовый заголовок сообщения, дальше кадр отдаётся как есть.
+REST endpoints from the official V5 documentation are covered (commit `d5a43d2` of the `bybit-exchange/docs` repository): 448 methods, of which 56 are public and 392 require a signature. WebSocket speaks the V5 JSON channels and can accept binary SBE frames. The SBE schema is not decoded: only the 8-byte message header is parsed, and the rest of the frame is returned as-is.
 
-## Сборка
+## Build
 
-Нужны компилятор C11, libcurl, OpenSSL и pthread. Кадры WebSocket собираются поверх TLS в самой библиотеке: системный libcurl часто собран без протокола `wss`.
+A C11 compiler, libcurl, OpenSSL, and pthread are required. WebSocket frames are assembled over TLS inside the library: the system libcurl is often built without the `wss` protocol.
 
 ```sh
 make
 make test
 ```
 
-`make test` гоняет модульные тесты (подпись, JSON, стакан, каталог) и живой запрос. С IP в США и материковом Китае Bybit отвечает HTTP 403 на REST; тест это пропускает. Публичный WebSocket проверяется отдельно.
+`make test` runs the unit tests (signature, JSON, order book, catalog) and a live request. From IP addresses in the United States and mainland China, Bybit responds with HTTP 403 on REST; the test skips that case. The public WebSocket is checked separately.
 
 CMake:
 
@@ -22,9 +22,9 @@ cmake -S . -B build
 cmake --build build
 ```
 
-Статическая библиотека: `build/libbybit.a`. Заголовок: `include/bybit.h`.
+Static library: `build/libbybit.a`. Header: `include/bybit.h`.
 
-Каталог можно пересобрать из свежих docs:
+The catalog can be regenerated from a fresh copy of the docs:
 
 ```sh
 python3 tools/gen_endpoints.py /path/to/docs/docs/v5 include src
@@ -32,7 +32,7 @@ python3 tools/gen_endpoints.py /path/to/docs/docs/v5 include src
 
 ## REST
 
-Публичный запрос не требует ключа. Поля `NULL` пропускаются. `BYBIT_STR` кладёт JSON-строку, `BYBIT_RAW` вставляет готовый JSON (число, bool, объект, массив).
+A public request does not require a key. `NULL` fields are skipped. `BYBIT_STR` writes a JSON string; `BYBIT_RAW` inserts ready-made JSON (a number, bool, object, or array).
 
 ```c
 #include "bybit.h"
@@ -47,16 +47,16 @@ bybit_response *response = NULL;
 
 if (bybit_market_tickers(client, query, 2, &response) == BYBIT_OK &&
     bybit_response_ok(response)) {
-    /* response->result — JSON результата, response->raw — всё тело */
+    /* response->result is the result JSON; response->raw is the full body */
 }
 
 bybit_response_free(response);
 bybit_client_destroy(client);
 ```
 
-`bybit_rest()` возвращает `BYBIT_OK`, когда конверт Bybit разобран, даже если `retCode` не ноль. Код биржи лежит в `response->ret_code`. Транспортные сбои (`BYBIT_ERR_NETWORK`, `BYBIT_ERR_HTTP`, `BYBIT_ERR_JSON`) тоже могут заполнить `response`: его нужно освобождать, если указатель не `NULL`.
+`bybit_rest()` returns `BYBIT_OK` once the Bybit envelope has been parsed, even when `retCode` is not zero. The exchange code is stored in `response->ret_code`. Transport failures (`BYBIT_ERR_NETWORK`, `BYBIT_ERR_HTTP`, `BYBIT_ERR_JSON`) can also fill in `response`: free it whenever the pointer is not `NULL`.
 
-Приватный вызов подписывается, только если у эндпоинта `auth_required`. Строка подписи — `timestamp + api_key + recv_window + query` для GET и то же с телом JSON для POST. HMAC-SHA256 уходит в нижнем hex (`X-BAPI-SIGN-TYPE: 2`). RSA — это PKCS#1 v1.5 SHA-256 в base64, незашифрованный PEM в `api_secret` и `sign_type = BYBIT_SIGN_RSA_SHA256`.
+A private call is signed only when the endpoint has `auth_required`. The signature string is `timestamp + api_key + recv_window + query` for GET, and the same string plus the JSON body for POST. HMAC-SHA256 is sent as lowercase hex (`X-BAPI-SIGN-TYPE: 2`). RSA is PKCS#1 v1.5 SHA-256 in base64, with an unencrypted PEM in `api_secret` and `sign_type = BYBIT_SIGN_RSA_SHA256`.
 
 ```c
 bybit_config cfg = {0};
@@ -64,10 +64,10 @@ cfg.env = BYBIT_TESTNET;
 cfg.api_key = "key";
 cfg.api_secret = "secret";
 cfg.recv_window_ms = 5000;
-cfg.referer = "broker-id"; /* необязательно, заголовок X-Referer */
+cfg.referer = "broker-id"; /* optional, X-Referer header */
 
 bybit_client *client = bybit_client_create(&cfg);
-bybit_client_sync_time(client); /* сдвиг часов для подписи */
+bybit_client_sync_time(client); /* clock offset used for the signature */
 
 bybit_kv order[] = {
     BYBIT_STR("category", "linear"),
@@ -82,15 +82,15 @@ bybit_response *response = NULL;
 bybit_order_create(client, order, 7, &response);
 ```
 
-Площадки: `BYBIT_MAINNET`, `BYBIT_TESTNET`, `BYBIT_DEMO` и сайты `BYBIT_SITE_GLOBAL`, `BYBIT_SITE_BYTICK`, `TR`, `KZ`, `GE`, `AE`, `EU`, `ID`, `JP`, `HK`. Свой origin задаётся через `rest_url`.
+Environments: `BYBIT_MAINNET`, `BYBIT_TESTNET`, `BYBIT_DEMO`, and the sites `BYBIT_SITE_GLOBAL`, `BYBIT_SITE_BYTICK`, `TR`, `KZ`, `GE`, `AE`, `EU`, `ID`, `JP`, `HK`. A custom origin is set through `rest_url`.
 
-Список методов — `bybit_endpoint_count`, `bybit_endpoint_at`, `bybit_endpoint_find`. У каждой функции в `include/bybit/endpoints.h` в комментарии указаны метод, путь, нужна ли подпись и обязательные поля.
+The method list is available through `bybit_endpoint_count`, `bybit_endpoint_at`, and `bybit_endpoint_find`. Each function in `include/bybit/endpoints.h` has a comment that lists the HTTP method, path, whether a signature is required, and the required fields.
 
 ## WebSocket
 
-Каналы: spot, linear, inverse, option, spread, rfq, event, earn (`/v5/public/fp`), private, trade, system status и SBE (`public-sbe`, `private-sbe`, `trade-sbe`). Демо-счёт использует `stream-demo.bybit.com` только для private; публичные данные идут с mainnet. Trade и SBE на demo нет.
+Channels: spot, linear, inverse, option, spread, rfq, event, earn (`/v5/public/fp`), private, trade, system status, and SBE (`public-sbe`, `private-sbe`, `trade-sbe`). A demo account uses `stream-demo.bybit.com` only for private streams; public data comes from mainnet. Trade and SBE are unavailable on demo.
 
-Приватный и торговый сокеты аутентифицируются `GET/realtime{expires}`. Торговые операции: `order.create`, `order.amend`, `order.cancel` и batch-варианты. `args_json` — JSON-массив. Сердечный `{"op":"ping"}` уходит сам каждые 20 секунд из `bybit_ws_poll`; интервал меняется через `bybit_ws_set_ping_interval`.
+Private and trade sockets authenticate with `GET/realtime{expires}`. Trade operations: `order.create`, `order.amend`, `order.cancel`, and the batch variants. `args_json` is a JSON array. A heartbeat `{"op":"ping"}` is sent automatically every 20 seconds from `bybit_ws_poll`; the interval is changed with `bybit_ws_set_ping_interval`.
 
 ```c
 bybit_ws *ws = bybit_ws_create(client, BYBIT_WS_PUBLIC_LINEAR, NULL);
@@ -106,16 +106,16 @@ for (;;) {
     if (bybit_ws_poll(ws, 1000) != BYBIT_OK)
         continue;
     while (bybit_ws_next(ws, &msg) == BYBIT_OK) {
-        /* msg->data / msg->len, msg->binary для SBE */
+        /* msg->data / msg->len; msg->binary is set for SBE */
         bybit_ws_msg_free(msg);
     }
 }
 ```
 
-Имена топиков: orderbook, RPI, full book, kline, ticker, public trade, allLiquidation, insurance, adlAlert, priceLimit и SBE-темы `ob.rpi.1.sbe`, `ob.50.sbe`, `publicTrade.sbe`. Готовые строки приватных тем — макросы `BYBIT_TOPIC_*` (order, execution, execution.fast, position, wallet, greeks, dcp, strategy, spread, rfq, earn, appeal).
+Topic names: orderbook, RPI, full book, kline, ticker, public trade, allLiquidation, insurance, adlAlert, priceLimit, and the SBE topics `ob.rpi.1.sbe`, `ob.50.sbe`, `publicTrade.sbe`. Ready-made private topic strings are the `BYBIT_TOPIC_*` macros (order, execution, execution.fast, position, wallet, greeks, dcp, strategy, spread, rfq, earn, appeal).
 
-`bybit_orderbook_apply` собирает локальный стакан из snapshot и delta. Нулевый размер удаляет уровень. Цены сравниваются как десятичные строки. `book->gap` становится 1, если `u` у delta не равен предыдущему `u + 1`.
+`bybit_orderbook_apply` builds a local order book from a snapshot and deltas. A zero size removes a level. Prices are compared as decimal strings. `book->gap` becomes 1 when a delta's `u` is not equal to the previous `u + 1`.
 
-Лимит подписки spot — 10 тем на один запрос и 21000 символов в `args`, как в документации V5.
+The spot subscription limit is 10 topics per request and 21000 characters in `args`, matching the V5 documentation.
 
-SBE-хост по умолчанию: testnet `stream-testnet.bybits.org`, mainnet `stream.bybit.com`. Выделенный MMWS задаётся полем `ws_host`.
+The default SBE host is `stream-testnet.bybits.org` on testnet and `stream.bybit.com` on mainnet. A dedicated MMWS host is set with the `ws_host` field.
